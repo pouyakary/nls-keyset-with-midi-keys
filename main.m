@@ -210,6 +210,8 @@ void MIDIReadProcedure(const MIDIPacketList *packetList, void *readProcRefCon,
 // ─── Main ──────────────────────────────────────────────────────────────── ✣ ─
 
 int main(int argc, const char *argv[]) {
+  NSLog(@"Keyset Copyright (C) 2025  Pouya Kary <kary@gnu.org>");
+  NSLog(@"This program comes with ABSOLUTELY NO WARRANTY;");
   NSLog(@"Keyset Service Up & Running.");
   @autoreleasepool {
     MIDIKeyboardEmitter *emitter = [[MIDIKeyboardEmitter alloc] init];
