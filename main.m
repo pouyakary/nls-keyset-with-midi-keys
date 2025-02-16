@@ -30,37 +30,38 @@ void MIDIReadProcedure(const MIDIPacketList *packetList, void *readProcRefCon,
   self = [super init];
   if (self) {
     _keyMap = @{
-      @0b00001 : @"a",
-      @0b00010 : @"b",
-      @0b00011 : @"c",
-      @0b00100 : @"d",
-      @0b00101 : @"e",
-      @0b00110 : @"f",
-      @0b00111 : @"g",
-      @0b01000 : @"h",
-      @0b01001 : @"i",
-      @0b01010 : @"j",
-      @0b01011 : @"k",
-      @0b01100 : @"l",
-      @0b01101 : @"m",
-      @0b01110 : @"n",
-      @0b01111 : @"o",
-      @0b10000 : @"p",
-      @0b10001 : @"q",
-      @0b10010 : @"r",
-      @0b10011 : @"s",
-      @0b10100 : @"t",
-      @0b10101 : @"u",
-      @0b10110 : @"v",
-      @0b10111 : @"w",
-      @0b11000 : @"x",
-      @0b11001 : @"y",
-      @0b11010 : @"z",
-      @0b11011 : @",",
-      @0b11100 : @".",
-      @0b11101 : @":",
-      @0b11110 : @"?",
-      @0b11111 : @" "
+      @0b000001 : @"a",
+      @0b000010 : @"b",
+      @0b000011 : @"c",
+      @0b000100 : @"d",
+      @0b000101 : @"e",
+      @0b000110 : @"f",
+      @0b000111 : @"g",
+      @0b001000 : @"h",
+      @0b001001 : @"i",
+      @0b001010 : @"j",
+      @0b001011 : @"k",
+      @0b001100 : @"l",
+      @0b001101 : @"m",
+      @0b001110 : @"n",
+      @0b001111 : @"o",
+      @0b010000 : @"p",
+      @0b010001 : @"q",
+      @0b010010 : @"r",
+      @0b010011 : @"s",
+      @0b010100 : @"t",
+      @0b010101 : @"u",
+      @0b010110 : @"v",
+      @0b010111 : @"w",
+      @0b011000 : @"x",
+      @0b011001 : @"y",
+      @0b011010 : @"z",
+      @0b011011 : @".",
+      @0b011100 : @"?",
+      @0b011101 : @" ",
+      @0b011110 : @" ",
+      @0b011111 : @" ",
+      @0b100000 : @"\b",
     };
 
     _activeNotes = [NSMutableSet set];
@@ -103,20 +104,23 @@ void MIDIReadProcedure(const MIDIPacketList *packetList, void *readProcRefCon,
     Byte note = noteNumber.unsignedCharValue;
     switch (note % 12) {
     case 0:
-      bitMask |= 0b00001;
+      bitMask |= 0b000001;
       break; // C
     case 2:
-      bitMask |= 0b00010;
+      bitMask |= 0b000010;
       break; // D
     case 4:
-      bitMask |= 0b00100;
+      bitMask |= 0b000100;
       break; // E
     case 5:
-      bitMask |= 0b01000;
+      bitMask |= 0b001000;
       break; // F
     case 7:
-      bitMask |= 0b10000;
+      bitMask |= 0b010000;
       break; // G
+    case 9:
+      bitMask |= 0b100000;
+      break; // A
     }
   }
   return bitMask;
@@ -162,8 +166,8 @@ void MIDIReadProcedure(const MIDIPacketList *packetList, void *readProcRefCon,
     return;
 
   CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
-  UniChar charValue = [string characterAtIndex:0];
 
+  UniChar charValue = [string characterAtIndex:0];
   CGEventRef keyDown = CGEventCreateKeyboardEvent(source, 0, true);
   CGEventKeyboardSetUnicodeString(keyDown, 1, &charValue);
   CGEventPost(kCGHIDEventTap, keyDown);
