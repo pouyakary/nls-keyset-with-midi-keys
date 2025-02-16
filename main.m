@@ -2,77 +2,92 @@
 #import <CoreMIDI/CoreMIDI.h>
 #import <Foundation/Foundation.h>
 
+// ─── Declarations ──────────────────────────────────────────────────────── ✣ ─
+
+void MIDIReadProcedure(const MIDIPacketList *packetList, void *readProcRefCon,
+                       void *srcConnRefCon);
+
 @interface MIDIKeyboardEmitter : NSObject
 
 @property(nonatomic, assign) MIDIClientRef client;
 @property(nonatomic, assign) MIDIPortRef inputPort;
-@property(nonatomic, strong) NSMutableSet *activeNotes;
-@property(nonatomic, strong) NSMutableSet *chordNotes; // new property
+@property(nonatomic, strong) NSMutableSet<NSNumber *> *activeNotes;
+@property(nonatomic, strong) NSMutableSet<NSNumber *> *chordNotes;
+@property(nonatomic, readonly) NSDictionary<NSNumber *, NSString *> *keyMap;
 
+- (void)setupMIDI;
 - (void)handleMIDIPacketList:(const MIDIPacketList *)packetList;
-- (Byte)bitmaskForNotes:(NSSet *)notes; // new method
 
 @end
 
-void MIDIReadProcedure(const MIDIPacketList *packetList, void *readProcRefCon,
-                       void *srcConnRefCon) {
-  MIDIKeyboardEmitter *emitter = (__bridge MIDIKeyboardEmitter *)readProcRefCon;
-  [emitter handleMIDIPacketList:packetList];
-}
+// ─── Midi Keyboard Emitter ─────────────────────────────────────────────── ✣ ─
 
 @implementation MIDIKeyboardEmitter {
-  NSDictionary *_keyMap;
+  NSDictionary<NSNumber *, NSString *> *_keyMap;
 }
 
 - (instancetype)init {
   self = [super init];
   if (self) {
-    // _keyMap maps the bitmask (from 1 to 31) to corresponding characters.
     _keyMap = @{
-      @(0b00001) : @"a",
-      @(0b00010) : @"b",
-      @(0b00011) : @"c",
-      @(0b00100) : @"d",
-      @(0b00101) : @"e",
-      @(0b00110) : @"f",
-      @(0b00111) : @"g",
-      @(0b01000) : @"h",
-      @(0b01001) : @"i",
-      @(0b01010) : @"j",
-      @(0b01011) : @"k",
-      @(0b01100) : @"l",
-      @(0b01101) : @"m",
-      @(0b01110) : @"n",
-      @(0b01111) : @"o",
-      @(0b10000) : @"p",
-      @(0b10001) : @"q",
-      @(0b10010) : @"r",
-      @(0b10011) : @"s",
-      @(0b10100) : @"t",
-      @(0b10101) : @"u",
-      @(0b10110) : @"v",
-      @(0b10111) : @"w",
-      @(0b11000) : @"x",
-      @(0b11001) : @"y",
-      @(0b11010) : @"z",
-      @(0b11011) : @",",
-      @(0b11100) : @".",
-      @(0b11101) : @":",
-      @(0b11110) : @"?",
-      @(0b11111) : @" "
+      @0b00001 : @"a",
+      @0b00010 : @"b",
+      @0b00011 : @"c",
+      @0b00100 : @"d",
+      @0b00101 : @"e",
+      @0b00110 : @"f",
+      @0b00111 : @"g",
+      @0b01000 : @"h",
+      @0b01001 : @"i",
+      @0b01010 : @"j",
+      @0b01011 : @"k",
+      @0b01100 : @"l",
+      @0b01101 : @"m",
+      @0b01110 : @"n",
+      @0b01111 : @"o",
+      @0b10000 : @"p",
+      @0b10001 : @"q",
+      @0b10010 : @"r",
+      @0b10011 : @"s",
+      @0b10100 : @"t",
+      @0b10101 : @"u",
+      @0b10110 : @"v",
+      @0b10111 : @"w",
+      @0b11000 : @"x",
+      @0b11001 : @"y",
+      @0b11010 : @"z",
+      @0b11011 : @",",
+      @0b11100 : @".",
+      @0b11101 : @":",
+      @0b11110 : @"?",
+      @0b11111 : @" "
     };
 
-    self.activeNotes = [NSMutableSet set];
-    self.chordNotes = [NSMutableSet set]; // initialize new property
+    _activeNotes = [NSMutableSet set];
+    _chordNotes = [NSMutableSet set];
     [self setupMIDI];
   }
   return self;
 }
 
+// ─── Setup Midi ────────────────────────────────────────────────────────── ✣ ─
+
 - (void)setupMIDI {
-  MIDIClientCreate(CFSTR("MIDIKeyboardEmitter"), NULL, NULL, &_client);
-  MIDIInputPortCreate(_client, CFSTR("InputPort"), MIDIReadProcedure,
-                      (__bridge void *)self, &_inputPort);
+  OSStatus status =
+      MIDIClientCreate(CFSTR("MIDIKeyboardEmitter"), NULL, NULL, &_client);
+
+  if (status != noErr) {
+    NSLog(@"Failure In Creating MIDI Client: %d", (int)status);
+    return;
+  }
+
+  status = MIDIInputPortCreate(_client, CFSTR("InputPort"), MIDIReadProcedure,
+                               (__bridge void *)self, &_inputPort);
+  if (status != noErr) {
+    NSLog(@"Failure In Creating Input Port: %d", (int)status);
+    return;
+  }
+
   ItemCount sourceCount = MIDIGetNumberOfSources();
   for (ItemCount i = 0; i < sourceCount; i++) {
     MIDIEndpointRef source = MIDIGetSource(i);
@@ -80,110 +95,105 @@ void MIDIReadProcedure(const MIDIPacketList *packetList, void *readProcRefCon,
   }
 }
 
-// This method computes a bitmask based on the activity of notes across all
-// octaves. It assigns bits for the pitch classes: C (mod 12 == 0), D (== 2), E
-// (== 4), F (== 5), and G (== 7).
-- (Byte)activeNotesBitmask {
-  Byte bitmask = 0;
-  for (NSNumber *noteNumber in self.activeNotes) {
-    Byte note = [noteNumber unsignedCharValue];
-    Byte pitchClass = note % 12;
-    if (pitchClass == 0) { // C
-      bitmask |= 0b00001;
-    } else if (pitchClass == 2) { // D
-      bitmask |= 0b00010;
-    } else if (pitchClass == 4) { // E
-      bitmask |= 0b00100;
-    } else if (pitchClass == 5) { // F
-      bitmask |= 0b01000;
-    } else if (pitchClass == 7) { // G
-      bitmask |= 0b10000;
+// ─── Create Bit Mask ───────────────────────────────────────────────────── ✣ ─
+
+- (Byte)bitMaskForNotes:(NSSet<NSNumber *> *)notes {
+  Byte bitMask = 0;
+  for (NSNumber *noteNumber in notes) {
+    Byte note = noteNumber.unsignedCharValue;
+    switch (note % 12) {
+    case 0:
+      bitMask |= 0b00001;
+      break; // C
+    case 2:
+      bitMask |= 0b00010;
+      break; // D
+    case 4:
+      bitMask |= 0b00100;
+      break; // E
+    case 5:
+      bitMask |= 0b01000;
+      break; // F
+    case 7:
+      bitMask |= 0b10000;
+      break; // G
     }
   }
-  return bitmask;
+  return bitMask;
 }
 
-- (Byte)bitmaskForNotes:(NSSet *)notes {
-  Byte bitmask = 0;
-  for (NSNumber *noteNumber in notes) {
-    Byte note = [noteNumber unsignedCharValue];
-    Byte pitchClass = note % 12;
-    if (pitchClass == 0) { // C
-      bitmask |= 0b00001;
-    } else if (pitchClass == 2) { // D
-      bitmask |= 0b00010;
-    } else if (pitchClass == 4) { // E
-      bitmask |= 0b00100;
-    } else if (pitchClass == 5) { // F
-      bitmask |= 0b01000;
-    } else if (pitchClass == 7) { // G
-      bitmask |= 0b10000;
-    }
-  }
-  return bitmask;
-}
+// ─── Handle Midi Packet List ───────────────────────────────────────────── ✣ ─
 
 - (void)handleMIDIPacketList:(const MIDIPacketList *)packetList {
-  // Use a temporary set to aggregate note events from the entire packet list.
-  NSMutableSet *tempNotes = [self.activeNotes mutableCopy];
-  const MIDIPacket *packet = &packetList->packet[0];
+  @synchronized(self) {
+    NSMutableSet *tempNotes = [self.activeNotes mutableCopy];
+    const MIDIPacket *packet = &packetList->packet[0];
 
-  for (int i = 0; i < packetList->numPackets; i++) {
-    Byte status = packet->data[0];
-    Byte note = packet->data[1];
-    Byte velocity = packet->data[2];
+    for (int i = 0; i < packetList->numPackets; i++) {
+      Byte status = packet->data[0];
+      Byte note = packet->data[1];
+      Byte velocity = packet->data[2];
 
-    if ((status & 0xF0) == 0x90) { // Note On
-      if (velocity > 0) {
+      if ((status & 0xF0) == 0x90 && velocity > 0) { // Note On
         [tempNotes addObject:@(note)];
-        [self.chordNotes addObject:@(note)]; // accumulate chord note
-      } else { // Note On with zero velocity as Note Off.
+        [self.chordNotes addObject:@(note)];
+      } else { // Note Off
         [tempNotes removeObject:@(note)];
       }
-    } else if ((status & 0xF0) == 0x80) { // Note Off
-      [tempNotes removeObject:@(note)];
+      packet = MIDIPacketNext(packet);
     }
 
-    packet = MIDIPacketNext(packet);
-  }
+    self.activeNotes = tempNotes;
 
-  self.activeNotes = tempNotes;
-
-  // When all keys are released, output the chord if one was formed.
-  if (tempNotes.count == 0 && self.chordNotes.count > 0) {
-    Byte bitmask = [self bitmaskForNotes:self.chordNotes];
-    NSString *character = _keyMap[@(bitmask)];
-    if (character) {
-      [self sendKeyEventForString:character];
+    if (tempNotes.count == 0 && self.chordNotes.count > 0) {
+      Byte bitMask = [self bitMaskForNotes:self.chordNotes];
+      NSString *character = _keyMap[@(bitMask)];
+      if (character)
+        [self sendKeyEventForString:character];
+      [self.chordNotes removeAllObjects];
     }
-    [self.chordNotes removeAllObjects]; // reset for next chord
   }
 }
 
+// ─── Send Key Event For String ─────────────────────────────────────────── ✣ ─
+
 - (void)sendKeyEventForString:(NSString *)string {
+  if (string.length != 1)
+    return;
+
   CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStatePrivate);
-  for (NSUInteger i = 0; i < string.length; i++) {
-    unichar character = [string characterAtIndex:i];
-    // Generate and post key down event.
-    CGEventRef keyDown = CGEventCreateKeyboardEvent(source, 0, true);
-    CGEventKeyboardSetUnicodeString(keyDown, 1, &character);
-    CGEventPost(kCGHIDEventTap, keyDown);
-    CFRelease(keyDown);
-    // Generate and post key up event.
-    CGEventRef keyUp = CGEventCreateKeyboardEvent(source, 0, false);
-    CGEventKeyboardSetUnicodeString(keyUp, 1, &character);
-    CGEventPost(kCGHIDEventTap, keyUp);
-    CFRelease(keyUp);
-  }
+  UniChar charValue = [string characterAtIndex:0];
+
+  CGEventRef keyDown = CGEventCreateKeyboardEvent(source, 0, true);
+  CGEventKeyboardSetUnicodeString(keyDown, 1, &charValue);
+  CGEventPost(kCGHIDEventTap, keyDown);
+  CFRelease(keyDown);
+
+  CGEventRef keyUp = CGEventCreateKeyboardEvent(source, 0, false);
+  CGEventKeyboardSetUnicodeString(keyUp, 1, &charValue);
+  CGEventPost(kCGHIDEventTap, keyUp);
+  CFRelease(keyUp);
+
   CFRelease(source);
 }
 
 @end
 
+// ─── Midi Read Procedure ───────────────────────────────────────────────── ✣ ─
+
+void MIDIReadProcedure(const MIDIPacketList *packetList, void *readProcRefCon,
+                       void *srcConnRefCon) {
+  MIDIKeyboardEmitter *emitter = (__bridge MIDIKeyboardEmitter *)readProcRefCon;
+  [emitter handleMIDIPacketList:packetList];
+}
+
+// ─── Main ──────────────────────────────────────────────────────────────── ✣ ─
+
 int main(int argc, const char *argv[]) {
+  NSLog(@"Keyset Service Up & Running.");
   @autoreleasepool {
     MIDIKeyboardEmitter *emitter = [[MIDIKeyboardEmitter alloc] init];
     [[NSRunLoop currentRunLoop] run];
-    return 0;
   }
+  return 0;
 }
